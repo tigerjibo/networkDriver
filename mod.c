@@ -4,7 +4,17 @@
 #include<linux/errno.h>
 #include<net/net_namespace.h>
 #include<linux/netdevice.h>
+#include<linux/skbuff.h>
+#include <linux/in.h>
 #include <linux/netdev_features.h>
+#include <linux/tcp.h>
+#include <linux/ip.h> 
+#include <linux/in.h>
+#include <linux/netdevice.h> 
+#include <linux/types.h> 
+#include <linux/slab.h>
+ #include <linux/in6.h> 
+#include <asm/checksum.h>
 
 
 MODULE_LICENSE("Dual BSD/GPL");
@@ -39,9 +49,34 @@ int myi_release( struct net_device *net)
 	netif_stop_queue(dev);
 	return(0);
 }
+static void myi_hw_tx(char *buf, int len, struct net_device *dev) 
+{
 
+}
 int myi_tx(struct sk_buff *skb, struct net_device *dev) 
 {
+	
+        int len;                                                   
+        char *data, shortpkt[ETH_ZLEN];                            
+        struct myi_priv *priv = netdev_priv(dev);                
+                                                                   
+        data = skb->data;                                          
+        len = skb->len;                                            
+        if (len < ETH_ZLEN) {                                      
+                memset(shortpkt, 0, ETH_ZLEN);                     
+                memcpy(shortpkt, skb->data, skb->len);             
+                len = ETH_ZLEN;                                    
+                data = shortpkt;                                   
+        }                                                          
+        dev->trans_start = jiffies; /* backup timestamp */       
+                                                                   
+        /* backup skb, to free after tx */
+        priv->skb = skb;                                           
+                                                                   
+	/*Actual hardware TX comes here*/
+        myi_hw_tx(data, len, dev);                               
+                                                                   
+	/*TODO: return correct value based on actual hardware behaviour*/
 	return NETDEV_TX_OK;
 }
 static int myi_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
@@ -54,8 +89,8 @@ const struct net_device_ops myi_netdev_ops = {
          .ndo_open = myi_open,		/*first 3 are mandatory to bring the network up*/
          .ndo_stop = myi_release,
          .ndo_start_xmit = myi_tx,	/*kernel panic without this in x68 . probably due to teh ARP at interface up*/
-/*       .ndo_set_config = myi_config,
          .ndo_do_ioctl = myi_ioctl,
+/*       .ndo_set_config = myi_config,
          .ndo_get_stats = myi_stats,
          .ndo_change_mtu = myi_change_mtu,
          .ndo_tx_timeout = myi_tx_timeout,
@@ -64,7 +99,7 @@ const struct net_device_ops myi_netdev_ops = {
 
 static void myi_setup(struct net_device *dev)
 {
-	 struct snull_priv *priv;
+	 struct myi_priv *priv;
 	 ether_setup(dev);	
 	 dev->netdev_ops = &myi_netdev_ops;
 	 dev->watchdog_timeo = 5; //jiffies
